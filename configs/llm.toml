@@ -58,9 +58,11 @@ max_tokens = 8192
 thinking_budget = 0         # Gemini: no hidden reasoning (billed as output); see FLORES check
 
 [roles.judge]
-model = "deepseek:deepseek-flash"
+# a different model from the generating roles (checked on load); scores records, see src/validate/judge.py
+model = "vertex:gemini-3.5-flash-lite"
 temperature = 0.0
-max_tokens = 4096
+max_tokens = 8192
+thinking_budget = 0
 
 [roles.transliterator]
 # fills missing Sinhala/Tamil spellings in resources/sl (src/sl_gen/fill_scripts.py); output is human-reviewed
