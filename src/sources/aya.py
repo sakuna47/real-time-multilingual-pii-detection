@@ -20,9 +20,12 @@ LANGS = {"sin": "si", "tam": "ta"}
 
 # Sinhala / Tamil / English cue words for personal tasks (letters, applications, forms, names...)
 PERSONAL = re.compile(
-    r"(ලිපිය|ලිපියක්|අයදුම්|ඉල්ලුම්|පෝරම|නම|ලිපිනය|දුරකථන|විද්‍යුත් තැපැල්|රැකියා|බැංකු|"
-    r"கடிதம்|விண்ணப்ப|படிவ|பெயர்|முகவரி|தொலைபேசி|மின்னஞ்சல்|வேலை|வங்கி|"
-    r"letter|application|form|email|name|address|phone|bank|job)", re.I)
+    # Tasks where a user would naturally include personal details (letters, applications, forms,
+    # complaints, emails, CVs/bios). Single attribute words like "name"/"නම" were dropped: නම also
+    # matches නම් ("if"), and "form" matched inside "information".
+    r"(ලිපිය|ලිපියක්|අයදුම්පත|අයදුම්|ඉල්ලුම්පත|පෝරමය|පෝරමයක්|පැමිණිලි|ඊමේල්|ඊ-මේල්|ජීව දත්ත|"
+    r"கடிதம்|கடிதத்தை|விண்ணப்ப|படிவம்|படிவத்தை|புகார்|மின்னஞ்சல்|சுயவிவர|"
+    r"\b(?:letter|application|cover letter|form|complaint|e-?mail|resume|cv|bio)\b)", re.I)
 
 
 def convert(row: dict) -> tuple[dict | None, str | None]:
