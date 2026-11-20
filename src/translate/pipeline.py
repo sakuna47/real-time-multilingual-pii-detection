@@ -4,6 +4,7 @@
     python -m src.translate.pipeline --source wildchat --limit 20 --langs si,ta
     python -m src.translate.pipeline --source aya --limit 10
     python -m src.translate.pipeline --source nemotron --limit 20 --dry-run      # offline, fake model
+    python -m src.translate.pipeline --source nemotron --new 2500                # N more, skipping done/rejected
 
 Flow per record:
   spans (Nemotron)          mask -> translate -> [code-mix] -> fill
@@ -109,6 +110,18 @@ class Out:
         self.rejected = open(self.dir / "rejected.jsonl", "a", encoding="utf-8", newline="\n")
         self.stats: Counter[str] = Counter()
 
+    def content_rejections(self) -> set[str]:
+        """Source ids rejected before for a content reason (not suitable, failed checks...).
+        Rejections caused by API errors are not included, so those records are retried."""
+        ids = set()
+        path = self.dir / "rejected.jsonl"
+        if path.exists():
+            for line in open(path, encoding="utf-8"):
+                r = json.loads(line)
+                if "Error" not in r.get("reason", ""):
+                    ids.add(r["source_id"])
+        return ids
+
     def write(self, rec: dict) -> None:
         v = rec["ext"]["variety"]
         if v not in self.files:
@@ -128,7 +141,17 @@ class Out:
 
 
 def run(source: str, *, limit: int | None, langs: list[str], mix: dict[str, float], seed: int,
-        batch_size: int, workers: int, dry_run: bool, all_aya: bool = False) -> Counter:
+        batch_size: int, workers: int, dry_run: bool, all_aya: bool = False,
+        min_budget_usd: float | None = 1.0, new: int | None = None) -> Counter:
+    if not dry_run and min_budget_usd is not None:
+        from ..common.paths import logs_dir
+        from ..llm.cost import report
+        log = logs_dir() / "llm_calls.jsonl"
+        remaining = report(log).get("remaining_usd") if log.exists() else None
+        if remaining is not None and remaining < min_budget_usd:
+            raise SystemExit(f"stopping: estimated remaining credit ${remaining} is below ${min_budget_usd} "
+                             "(python -m src.llm.cost; change --min-budget to override)")
+        print(f"estimated remaining credit: ${remaining}", flush=True)
     run = make_run_id(f"tr-{source}")
     client = MockClient(handler=steps.dry_run_handler) if dry_run else None
     llms = {role: get_llm(role, dry_run=dry_run, run_id=run, provider_client=client)
@@ -140,12 +163,20 @@ def run(source: str, *, limit: int | None, langs: list[str], mix: dict[str, floa
     out = Out(source)
 
     todo = []
-    for rec in load_source(source, limit=limit, seed=seed, all_aya=all_aya):
+    # --new N: walk the whole source in stable hash order and take the first N records that were
+    # neither written nor rejected for a content reason before (API errors are retried).
+    skip_rejected = out.content_rejections() if new else set()
+    for rec in load_source(source, limit=None if new else limit, seed=seed, all_aya=all_aya):
         v = assign_variety(rec, langs, mix, seed)
         if output_id(rec, v) in out.existing:
             out.stats["skipped:already_done"] += 1
             continue
+        if rec["id"] in skip_rejected:
+            out.stats["skipped:rejected_before"] += 1
+            continue
         todo.append({"rec": rec, "v": v, "models": [], "tags": []})
+        if new and len(todo) >= new:
+            break
     print(f"{source}: {len(todo)} records to process ({out.stats['skipped:already_done']} already done)", flush=True)
 
     # 1. mask (spans) or insert placeholders (no spans)
@@ -223,7 +254,9 @@ def run(source: str, *, limit: int | None, langs: list[str], mix: dict[str, floa
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", required=True, choices=sorted(SOURCES))
-    ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--limit", type=int, default=None, help="first N source records (stable order)")
+    ap.add_argument("--new", type=int, default=None,
+                    help="process N records not yet written or rejected before (use this for later stages)")
     ap.add_argument("--langs", default="si,ta")
     ap.add_argument("--mix", default="native:0.4,en:0.3,rom:0.3")
     ap.add_argument("--seed", type=int, default=42)
@@ -231,10 +264,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--all-aya", action="store_true", help="Aya: use all prompts, not only personal-intent ones")
     ap.add_argument("--dry-run", action="store_true", help="offline fake model (tests the pipeline only)")
+    ap.add_argument("--min-budget", type=float, default=1.0,
+                    help="refuse to start if estimated remaining credit (src.llm.cost) is below this, USD")
     args = ap.parse_args(argv)
     stats = run(args.source, limit=args.limit, langs=[l.strip() for l in args.langs.split(",")],
                 mix=parse_mix(args.mix), seed=args.seed, batch_size=args.batch_size, workers=args.workers,
-                dry_run=args.dry_run, all_aya=args.all_aya)
+                dry_run=args.dry_run, all_aya=args.all_aya, min_budget_usd=args.min_budget,
+                new=args.new)
     print(json.dumps(dict(sorted(stats.items())), indent=2))
     return 0
 

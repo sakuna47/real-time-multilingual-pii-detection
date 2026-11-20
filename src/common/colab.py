@@ -65,6 +65,42 @@ def vertex_login() -> None:
     auth.authenticate_user(project_id=os.environ.get("GOOGLE_CLOUD_PROJECT") or None)
 
 
+def unpack_upload(name: str = "pii_project_upload.zip") -> dict | None:
+    """Unpack a zip made on a PC with `python -m src.common.pack` and uploaded to
+    MyDrive/PII_Project/. Runs once: the zip is renamed to *.done afterwards.
+    Files that already exist on Drive are kept (Drive is newer), except the call log,
+    which is merged so the budget guard sees all past spending."""
+    import json
+    import zipfile
+    root = data_root()
+    zpath = root / name
+    if not zpath.exists():
+        return None
+    added = skipped = 0
+    with zipfile.ZipFile(zpath) as z:
+        for info in z.infolist():
+            if info.is_dir() or info.filename == "UPLOAD_MANIFEST.json":
+                continue
+            target = root / info.filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if info.filename == "logs/llm_calls.jsonl" and target.exists():
+                old = target.read_text(encoding="utf-8").splitlines()
+                seen = set(old)
+                new_lines = [l for l in z.read(info).decode("utf-8").splitlines() if l and l not in seen]
+                target.write_text("\n".join(new_lines + old) + "\n", encoding="utf-8")
+                added += 1
+                continue
+            if target.exists():
+                skipped += 1
+                continue
+            with z.open(info) as src, open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            added += 1
+        manifest = json.loads(z.read("UPLOAD_MANIFEST.json")) if "UPLOAD_MANIFEST.json" in z.namelist() else {}
+    zpath.rename(zpath.with_name(zpath.name + ".done"))
+    return {"added": added, "kept_existing": skipped, "packed_at": manifest.get("created_at")}
+
+
 def _backup(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_suffix(dst.suffix + ".tmp")

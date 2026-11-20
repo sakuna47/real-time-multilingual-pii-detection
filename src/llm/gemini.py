@@ -14,6 +14,10 @@ from typing import Any
 
 from .base import LLMError, LLMRequest, LLMResponse, is_retryable_status
 
+# Vertex AI Flex PayGo (set `service_tier = "flex"` on a role in configs/llm.toml). Global endpoint only.
+FLEX_HEADERS = {"X-Vertex-AI-LLM-Request-Type": "shared",
+                "X-Vertex-AI-LLM-Shared-Request-Type": "flex"}
+
 
 class GeminiClient:
     provider = "gemini"
@@ -63,6 +67,9 @@ class GeminiClient:
             cfg["response_mime_type"] = "application/json"
         if "thinking_budget" in req.extra:
             cfg["thinking_config"] = t.ThinkingConfig(thinking_budget=req.extra["thinking_budget"])
+        if self.provider == "vertex" and req.extra.get("service_tier") == "flex":
+            # Flex PayGo: ~50% price, best effort. "shared" skips Provisioned Throughput.
+            cfg["http_options"] = t.HttpOptions(headers=FLEX_HEADERS)
         config = t.GenerateContentConfig(**{k: v for k, v in cfg.items() if v is not None})
 
         start = time.monotonic()
@@ -82,6 +89,9 @@ class GeminiClient:
         thoughts = getattr(um, "thoughts_token_count", None)
         if thoughts:
             usage["thinking_tokens"] = thoughts
+        traffic = getattr(um, "traffic_type", None)   # ON_DEMAND / ON_DEMAND_FLEX / ... (Vertex only)
+        if traffic is not None:
+            usage["traffic_type"] = getattr(traffic, "name", None) or str(traffic)
         text = resp.text or ""
         if not text and finish not in (None, "STOP"):
             raise LLMError(f"Gemini returned no text (finish_reason={finish})",
