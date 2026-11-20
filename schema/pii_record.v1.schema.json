@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pii_record.v1.schema.json",
+  "title": "PII record v1",
+  "description": "One text with character-level PII spans. Semantic rules (offsets match text, no overlap, NFC, label/subtype pairs) are enforced by src/pii_data/record.py. See docs/DATA_FORMAT.md.",
+  "type": "object",
+  "required": ["schema_version", "id", "text", "spans", "label_set", "language", "domain", "origin", "validation"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^1\\.[0-9]+$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9_-]+:[a-z0-9_-]+:\\S+$"},
+    "text": {"type": "string", "minLength": 1},
+    "label_set": {"const": "v1"},
+    "spans": {"type": "array", "items": {"$ref": "#/$defs/span"}},
+    "language": {
+      "type": "object",
+      "required": ["primary", "langs", "scripts", "code_mixed", "romanized"],
+      "properties": {
+        "primary": {"$ref": "#/$defs/lang"},
+        "langs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/lang"}},
+        "scripts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/script"}},
+        "code_mixed": {"type": "boolean"},
+        "romanized": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "domain": {"enum": ["chat_prompt", "email", "form", "letter", "chat_message", "document", "news", "wiki", "other"]},
+    "region": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"},
+    "origin": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": {"enum": ["original", "translated_placeholder", "translated_projected", "llm_generated", "template_filled", "human_written", "human_edited"]},
+        "dataset": {"type": ["string", "null"]},
+        "source_id": {"type": ["string", "null"]},
+        "parent_id": {"type": ["string", "null"]},
+        "template_id": {"type": ["string", "null"]},
+        "license": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "generation": {
+      "type": ["object", "null"],
+      "properties": {
+        "pipeline": {"type": "string"},
+        "pipeline_version": {"type": "string"},
+        "git_commit": {"type": ["string", "null"]},
+        "seed": {"type": ["integer", "null"]},
+        "created_at": {"type": "string"},
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "name"],
+            "properties": {
+              "role": {"type": "string"},
+              "name": {"type": "string"},
+              "params": {"type": "object"},
+              "prompt_id": {"type": ["string", "null"]}
+            }
+          }
+        },
+        "filler": {"type": ["object", "null"]},
+        "persona_id": {"type": ["string", "null"]}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["unchecked", "auto_failed", "auto_passed", "judge_failed", "judge_passed", "human_rejected", "human_verified"]},
+        "checks": {"type": "object"},
+        "judges": {"type": "array", "items": {"type": "object", "required": ["model", "verdict"]}},
+        "human": {"type": "array", "items": {"type": "object", "required": ["annotator", "verdict"]}}
+      }
+    },
+    "implicit": {
+      "type": ["object", "null"],
+      "required": ["identifying"],
+      "properties": {
+        "identifying": {"type": "boolean"},
+        "quasi_identifiers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["start", "end", "kind"],
+            "properties": {
+              "start": {"type": "integer", "minimum": 0},
+              "end": {"type": "integer", "minimum": 1},
+              "kind": {"enum": ["occupation", "workplace", "rare_attribute", "small_town", "relationship", "event", "age", "other"]}
+            }
+          }
+        },
+        "rationale": {"type": ["string", "null"]}
+      }
+    },
+    "distractors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "kind"],
+        "properties": {
+          "start": {"type": "integer", "minimum": 0},
+          "end": {"type": "integer", "minimum": 1},
+          "kind": {"enum": ["invoice_number", "reference_number", "date_number", "public_figure", "place_name", "common_word_name", "product_code", "other"]}
+        }
+      }
+    },
+    "split": {"enum": ["train", "dev", "test", null]},
+    "group": {"type": ["string", "null"]},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "ext": {"type": "object"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "lang": {"type": "string", "pattern": "^[a-z]{2,3}$"},
+    "script": {"type": "string", "pattern": "^[A-Z][a-z]{3}$"},
+    "span": {
+      "type": "object",
+      "required": ["start", "end", "label", "value"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 1},
+        "label": {"enum": ["PERSON", "ID_NUMBER", "PHONE", "EMAIL", "ADDRESS", "LOCATION", "DOB", "USERNAME", "PASSWORD", "IP_ADDRESS"]},
+        "subtype": {"type": ["string", "null"]},
+        "value": {"type": "string", "minLength": 1},
+        "entity_id": {"type": ["string", "null"]},
+        "source_labels": {"type": "array", "items": {"type": "string"}},
+        "script": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    }
+  }
+}

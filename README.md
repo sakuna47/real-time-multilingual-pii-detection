@@ -70,6 +70,14 @@ A separate synthetic Sri Lankan PII dataset will also be created for this projec
 
 Only synthetic personal information will be used for the project.
 
+## Dataset Format
+
+All datasets (AI4Privacy, translated Sinhala/Tamil, generated Sri Lankan prompts, gold test set) use one JSONL record format. See [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md) for the spec, `schema/pii_record.v1.schema.json` for the JSON Schema, and validate any file with:
+
+```bash
+python -m src.pii_data path/to/file.jsonl
+```
+
 ## Evaluation
 
 The system will be evaluated using:
