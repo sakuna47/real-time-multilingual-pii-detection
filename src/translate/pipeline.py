@@ -11,6 +11,8 @@ Flow per record:
   no spans (WildChat, en)   insert placeholders -> translate -> [code-mix] -> fill
   native (Aya, WildChat si/ta)  insert placeholders -> [code-mix] -> fill
 Each source record becomes ONE variety, chosen by a hash of its id (--mix sets the shares).
+Records are processed and written in chunks (--chunk, default 300): a crash loses at most one
+chunk, a progress line is printed per chunk, and the budget is re-checked between chunks.
 
 Output: <data_root>/generated/sri_lankan/<source>/<variety>.jsonl, rejected.jsonl (stage + reason),
 manifest.json. Re-running continues: records already written are skipped, and LLM answers
@@ -23,6 +25,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -134,6 +137,11 @@ class Out:
                                         "stage": stage, "reason": reason}, ensure_ascii=False) + "\n")
         self.stats[f"rejected:{stage}"] += 1
 
+    def flush(self) -> None:
+        for f in self.files.values():
+            f.flush()
+        self.rejected.flush()
+
     def close(self) -> None:
         for f in self.files.values():
             f.close()
@@ -142,7 +150,7 @@ class Out:
 
 def run(source: str, *, limit: int | None, langs: list[str], mix: dict[str, float], seed: int,
         batch_size: int, workers: int, dry_run: bool, all_aya: bool = False,
-        min_budget_usd: float | None = 1.0, new: int | None = None) -> Counter:
+        min_budget_usd: float | None = 1.0, new: int | None = None, chunk: int = 300) -> Counter:
     if not dry_run and min_budget_usd is not None:
         from ..common.paths import logs_dir
         from ..llm.cost import report
@@ -179,6 +187,52 @@ def run(source: str, *, limit: int | None, langs: list[str], mix: dict[str, floa
             break
     print(f"{source}: {len(todo)} records to process ({out.stats['skipped:already_done']} already done)", flush=True)
 
+    # Process and write in chunks: each finished chunk is on disk (Drive) before the next starts,
+    # so a crash loses at most one chunk, progress is visible, and the budget is re-checked.
+    size = chunk if chunk and chunk > 0 else max(len(todo), 1)
+    started = time.monotonic()
+    for i in range(0, len(todo), size):
+        part = todo[i:i + size]
+        _process(part, llms=llms, langs=langs, batch_size=batch_size, workers=workers, seed=seed,
+                 factory=factory, out=out, run=run)
+        out.flush()
+        done = min(i + size, len(todo))
+        written = sum(v for k, v in out.stats.items() if k.startswith("written:"))
+        rejected = sum(v for k, v in out.stats.items() if k.startswith("rejected:"))
+        cost = _run_cost(run) if not dry_run else 0.0
+        mins = (time.monotonic() - started) / 60
+        print(f"[{done}/{len(todo)}] written {written}, rejected {rejected}, "
+              f"this run ${cost:.2f}, {mins:.1f} min", flush=True)
+        if not dry_run and min_budget_usd is not None and done < len(todo):
+            left = _remaining()
+            if left is not None and left < min_budget_usd:
+                print(f"stopping early: estimated remaining credit ${left} is below ${min_budget_usd}. "
+                      "Re-run later with the same command to continue.", flush=True)
+                break
+    out.close()
+    write_manifest(out.dir, dataset=f"sri_lankan/{source}",
+                   config={"langs": langs, "mix": mix, "seed": seed, "pipeline_version": PIPELINE_VERSION,
+                           "dry_run": dry_run})
+    return out.stats
+
+
+def _remaining() -> float | None:
+    from ..common.paths import logs_dir
+    from ..llm.cost import report
+    log = logs_dir() / "llm_calls.jsonl"
+    return report(log).get("remaining_usd") if log.exists() else None
+
+
+def _run_cost(run_id: str) -> float:
+    from ..common.paths import logs_dir
+    from ..llm.cost import report
+    log = logs_dir() / "llm_calls.jsonl"
+    return report(log, run=run_id).get("total_usd", 0.0) if log.exists() else 0.0
+
+
+def _process(todo: list[dict], *, llms: dict, langs: list[str], batch_size: int, workers: int, seed: int,
+             factory: PersonaFactory, out: "Out", run: str) -> None:
+    """Steps 1-4 for one chunk of records; results are written through `out`."""
     # 1. mask (spans) or insert placeholders (no spans)
     to_insert = [t for t in todo if not t["rec"]["spans"]]
     for t in todo:
@@ -237,18 +291,13 @@ def run(source: str, *, limit: int | None, langs: list[str], mix: dict[str, floa
             continue
         native_src = rec["language"]["primary"] in ("si", "ta")
         method = "llm_generated" if native_src else "translated_placeholder"
-        new = build_record(filled=filled, source=rec, variety=v, method=method, masked_target=t["text"],
-                           models=t["models"], extra_tags=t["tags"], seed=seed,
-                           pipeline_version=PIPELINE_VERSION)
-        if new["validation"]["status"] == "auto_failed":
-            out.reject(rec, v, "validate", "; ".join(new["validation"]["checks"]["errors"]), run)
+        made = build_record(filled=filled, source=rec, variety=v, method=method, masked_target=t["text"],
+                            models=t["models"], extra_tags=t["tags"], seed=seed,
+                            pipeline_version=PIPELINE_VERSION)
+        if made["validation"]["status"] == "auto_failed":
+            out.reject(rec, v, "validate", "; ".join(made["validation"]["checks"]["errors"]), run)
             continue
-        out.write(new)
-    out.close()
-    write_manifest(out.dir, dataset=f"sri_lankan/{source}",
-                   config={"langs": langs, "mix": mix, "seed": seed, "pipeline_version": PIPELINE_VERSION,
-                           "dry_run": dry_run})
-    return out.stats
+        out.write(made)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -264,13 +313,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--all-aya", action="store_true", help="Aya: use all prompts, not only personal-intent ones")
     ap.add_argument("--dry-run", action="store_true", help="offline fake model (tests the pipeline only)")
+    ap.add_argument("--chunk", type=int, default=300,
+                    help="process and write this many records at a time (0 = all at once, the old behaviour)")
     ap.add_argument("--min-budget", type=float, default=1.0,
                     help="refuse to start if estimated remaining credit (src.llm.cost) is below this, USD")
     args = ap.parse_args(argv)
     stats = run(args.source, limit=args.limit, langs=[l.strip() for l in args.langs.split(",")],
                 mix=parse_mix(args.mix), seed=args.seed, batch_size=args.batch_size, workers=args.workers,
                 dry_run=args.dry_run, all_aya=args.all_aya, min_budget_usd=args.min_budget,
-                new=args.new)
+                new=args.new, chunk=args.chunk)
     print(json.dumps(dict(sorted(stats.items())), indent=2))
     return 0
 
