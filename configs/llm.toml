@@ -1,0 +1,56 @@
+# LLM providers and roles. Read by src/llm/config.py.
+#
+# Model ids are written as "<provider>:<model>". Check what your keys can use with
+#   python -m src.llm.smoke --list-models
+# and pick the translator from the FLORES benchmark (src/translate/benchmark.py) before scaling up.
+# Changing a model or prompt changes the cache key, so old cached answers are not reused.
+
+[providers.gemini]
+key_env = "GEMINI_API_KEY"
+rpm = 10                    # requests per minute; set to your tier's limit
+timeout_s = 120
+
+[providers.openrouter]
+key_env = "OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+rpm = 20
+timeout_s = 120
+json_response_format = false  # not every routed model supports it; we parse JSON from the text instead
+
+[providers.deepseek]
+key_env = "DEEPSEEK_API_KEY"
+base_url = "https://api.deepseek.com"
+rpm = 30
+timeout_s = 180
+json_response_format = true
+
+[providers.mock]
+rpm = 0                     # 0 = no rate limit
+
+# ---------------------------------------------------------------- roles
+# The judge must use a different model from every generating role (checked on load).
+
+[roles.translator]
+model = "gemini:gemini-2.5-flash"
+temperature = 0.2
+max_tokens = 8192
+
+[roles.codemixer]
+model = "gemini:gemini-2.5-flash"
+temperature = 0.5
+max_tokens = 8192
+
+[roles.inserter]
+model = "gemini:gemini-2.5-flash"
+temperature = 0.3
+max_tokens = 8192
+
+[roles.judge]
+model = "deepseek:deepseek-flash"
+temperature = 0.0
+max_tokens = 4096
+
+[roles.smoke]
+model = "gemini:gemini-2.5-flash"
+temperature = 0.0
+max_tokens = 1024

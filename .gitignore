@@ -1,0 +1,16 @@
+# secrets
+.env
+
+# data and run outputs (live on Drive / local data root)
+data/
+*.sqlite
+*.sqlite-journal
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# notebooks
+.ipynb_checkpoints/

@@ -1,0 +1,13 @@
+# Core
+jsonschema>=4.20
+pandas>=2.0
+pyarrow>=14.0
+python-dotenv>=1.0
+
+# LLM providers (imported lazily; only needed for live calls)
+google-genai>=1.0        # Gemini
+openai>=1.40             # OpenRouter and DeepSeek (OpenAI-compatible APIs)
+
+# Sources and evaluation
+datasets>=2.18
+sacrebleu>=2.4           # chrF++ for the translator benchmark and back-translation checks
