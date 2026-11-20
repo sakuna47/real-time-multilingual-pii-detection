@@ -56,3 +56,13 @@ def sources_dir(*parts: str) -> Path:
     d = data_root().joinpath("sources", *parts)
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def download_dir(*parts: str) -> Path:
+    """Raw downloads that are not on the Hugging Face Hub (e.g. GitHub zips). Lives next to
+    HF_HOME when it is set (Colab local disk), otherwise under <data_root>/raw/downloads."""
+    hf_home = os.environ.get("HF_HOME", "").strip()
+    base = Path(hf_home) / "downloads" if hf_home else data_root() / "raw" / "downloads"
+    d = base.joinpath(*parts)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
