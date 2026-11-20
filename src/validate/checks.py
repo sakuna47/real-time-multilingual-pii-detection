@@ -122,8 +122,18 @@ def run(src: Path, dst: Path) -> dict:
         rel = path.relative_to(src)
         out_path = dst / rel
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        # keep judge and human results from an earlier run of this step (re-running must not lose reviews)
+        kept: dict[str, dict] = {}
+        if out_path.exists():
+            for line in open(out_path, encoding="utf-8"):
+                if line.strip():
+                    old = json.loads(line)
+                    ov = old.get("validation") or {}
+                    if ov.get("human") or ov.get("judges"):
+                        kept[old["id"]] = ov
         n = passed = 0
-        with open(path, encoding="utf-8") as fin, open(out_path, "w", encoding="utf-8", newline="\n") as fout:
+        tmp_path = Path(str(out_path) + ".tmp")
+        with open(path, encoding="utf-8") as fin, open(tmp_path, "w", encoding="utf-8", newline="\n") as fout:
             for line in fin:
                 if not line.strip():
                     continue
@@ -134,10 +144,18 @@ def run(src: Path, dst: Path) -> dict:
                 val.setdefault("checks", {}).update(checks)
                 if val.get("status") in (None, "unchecked", "auto_passed", "auto_failed"):
                     val["status"] = "auto_failed" if failed else "auto_passed"
+                old = kept.get(rec["id"])
+                if old:
+                    for k in ("human", "judges"):
+                        if old.get(k):
+                            val[k] = old[k]
+                    if not failed and old.get("status", "").startswith(("human_", "judge_")):
+                        val["status"] = old["status"]
                 report["failed_checks"].update(failed)
                 n += 1
                 passed += not failed
                 fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        tmp_path.replace(out_path)
         report["files"][str(rel)] = {"records": n, "passed": passed}
     report["failed_checks"] = dict(report["failed_checks"].most_common())
     report["records"] = sum(f["records"] for f in report["files"].values())

@@ -73,7 +73,7 @@ def load_parents(ids: set[str]) -> dict[str, dict]:
     return found
 
 
-def sample(folder: Path, per_group: int, include_negatives: bool) -> list[dict]:
+def sample(folder: Path, per_group: int, include_negatives: bool, include_reviewed: bool = False) -> list[dict]:
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for p in sorted(folder.rglob("*.jsonl")):
         if p.name == "rejected.jsonl":
@@ -83,6 +83,11 @@ def sample(folder: Path, per_group: int, include_negatives: bool) -> list[dict]:
             continue
         for line in open(p, encoding="utf-8"):
             r = json.loads(line)
+            v = r.get("validation") or {}
+            if v.get("status") == "auto_failed":
+                continue
+            if v.get("human") and not include_reviewed:
+                continue
             groups[(src, (r.get("ext") or {}).get("variety", "?"))].append(r)
     out = []
     for key in sorted(groups):
@@ -203,9 +208,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("folder", type=Path, help="e.g. data/validated/sri_lankan")
     ap.add_argument("--per-group", type=int, default=10, help="records per (source, variety)")
     ap.add_argument("--negatives", action="store_true", help="include hard negatives")
+    ap.add_argument("--include-reviewed", action="store_true", help="also show records already reviewed")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args(argv)
-    records = sample(args.folder, args.per_group, args.negatives)
+    records = sample(args.folder, args.per_group, args.negatives, args.include_reviewed)
     parents = load_parents({(r.get("origin") or {}).get("parent_id") for r in records} - {None})
     sheet_id = utc_now()[:16].replace(":", "").replace("-", "")
     out = args.out or data_root() / "review" / f"review_{sheet_id}.html"

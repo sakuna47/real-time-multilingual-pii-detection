@@ -57,6 +57,21 @@ def test_checks_catch_problems():
     assert checks.check_record(badnic, set())["nic_format"] is False   # day 999 does not exist
 
 
+def test_rerun_keeps_human_verdicts():
+    src, dst = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+    (src / "x").mkdir()
+    (src / "x" / "si-en.jsonl").write_text(json.dumps(_rec(), ensure_ascii=False) + "\n", encoding="utf-8")
+    checks.run(src, dst)
+    out = dst / "x" / "si-en.jsonl"
+    rec = json.loads(out.read_text(encoding="utf-8"))
+    rec["validation"]["human"] = [{"annotator": "a1", "verdict": "ok"}]
+    rec["validation"]["status"] = "human_verified"
+    out.write_text(json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8")
+    checks.run(src, dst)                                   # re-run must not wipe the review
+    again = json.loads(out.read_text(encoding="utf-8"))
+    assert again["validation"]["status"] == "human_verified" and again["validation"]["human"][0]["verdict"] == "ok"
+
+
 def test_cmi():
     assert checks.cmi("මම යනවා ගෙදර", "Sinh") == 0
     assert checks.cmi("මම office යනවා", "Sinh") == 33.33
