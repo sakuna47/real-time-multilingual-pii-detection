@@ -31,7 +31,7 @@ class Persona:
     last: dict
     nic_old: str | None
     nic_new: str
-    place: dict           # {"latin", "sinhala", "tamil", "postcode"}
+    place: dict           # {"latin", "sinhala", "tamil", "postcode" (may be ""), "district"}
     street: dict          # {"latin", "sinhala", "tamil"}
     street_word: str      # "road" | "mawatha" | "lane" | "street"
     house: str            # "25/3"
@@ -118,7 +118,7 @@ class PersonaFactory:
             first={s: first[s] for s in ("latin", "sinhala", "tamil")},
             last={s: last[s] for s in ("latin", "sinhala", "tamil")},
             nic_old=old, nic_new=new,
-            place={s: place[s] for s in ("latin", "sinhala", "tamil", "postcode")},
+            place={s: place.get(s, "") for s in ("latin", "sinhala", "tamil", "postcode", "district")},
             street={s: v for s, v in rng.choice(self.streets).items() if s in ("latin", "sinhala", "tamil")},
             street_word=rng.choice(["road", "road", "mawatha", "lane", "street"]),
             house=house, mobile=phone.mobile(rng), landline=phone.landline(rng, area),

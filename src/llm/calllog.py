@@ -32,11 +32,12 @@ def summarize(path: str | Path) -> dict[str, dict[str, float]]:
             e = json.loads(line)
             s = out.setdefault(e.get("model", "?"), {"calls": 0, "cache_hits": 0, "errors": 0,
                                                      "input_tokens": 0, "output_tokens": 0,
-                                                     "latency_s": 0.0})
+                                                     "thinking_tokens": 0, "latency_s": 0.0})
             s["calls"] += 1
             s["cache_hits"] += bool(e.get("cached"))
             s["errors"] += bool(e.get("error"))
             s["input_tokens"] += e.get("input_tokens") or 0
             s["output_tokens"] += e.get("output_tokens") or 0
+            s["thinking_tokens"] += e.get("thinking_tokens") or 0   # billed like output
             s["latency_s"] += e.get("latency_s") or 0.0
     return out

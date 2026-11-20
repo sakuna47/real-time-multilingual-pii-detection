@@ -21,6 +21,10 @@ from ..sl_gen.varieties import Variety
 from . import placeholders as ph
 
 
+ID_SUBTYPE_BY_FORMAT = {"nic:old": "NIC_OLD", "nic:new": "NIC_NEW", "id:passport": "PASSPORT",
+                        "id:driving_licence": "DRIVING_LICENCE"}
+
+
 def _k(*parts: str) -> int:
     return int(hashlib.sha256(":".join(parts).encode()).hexdigest()[:12], 16)
 
@@ -49,6 +53,8 @@ def fill(text: str, slots: dict[str, dict], v: Variety, factory: PersonaFactory,
 
     rng = random.Random(_k(seed_key, "values"))
     script_of = {e: values.script_for(v, rng) for e in order}   # one script per person per record
+    # people whose city is also a LOCATION placeholder: leave the city out of their address
+    city_elsewhere = {slots[t]["entity"] for t, lab, *_ in found if lab == "LOCATION"}
     rendered: dict[str, tuple[str, str]] = {}
     out, spans, pos = [], [], 0
     length = 0
@@ -59,13 +65,14 @@ def fill(text: str, slots: dict[str, dict], v: Variety, factory: PersonaFactory,
         if tok not in rendered:
             s = slots[tok]
             val, fmt = values.render(label, s.get("subtype"), personas[s["entity"]], v, rng,
-                                     s.get("part", "full"), script_of[s["entity"]])
+                                     s.get("part", "full"), script_of[s["entity"]],
+                                     include_city=s["entity"] not in city_elsewhere)
             rendered[tok] = (unicodedata.normalize("NFC", val), fmt)
         val, fmt = rendered[tok]
         s = slots[tok]
         sub = s.get("subtype")
-        if label == "ID_NUMBER" and not sub:
-            sub = "NIC_OLD" if fmt.startswith("nic:old") else "NIC_NEW" if fmt.startswith("nic:new") else None
+        if label == "ID_NUMBER":   # subtype follows what was actually filled (an SSN slot becomes a NIC)
+            sub = ID_SUBTYPE_BY_FORMAT.get(fmt.split("_")[0] if fmt.startswith("nic:") else fmt, sub)
         if label == "PHONE" and not sub:
             sub = "LANDLINE" if s.get("subtype") == "LANDLINE" else "MOBILE"
         spans.append({"start": length, "end": length + len(val), "label": label, "subtype": sub,

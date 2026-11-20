@@ -24,6 +24,8 @@ LANG_NAMES = {"si": "Sinhala", "ta": "Tamil", "en": "English"}
 SCRIPT_NAMES = {"si": "Sinhala", "ta": "Tamil"}
 SUFFIX_EXAMPLE = {"si": "{PERSON_1}ට or {PERSON_1}ගේ", "ta": "{PERSON_1}க்கு or {PERSON_1}இன்"}
 NATIVE = {"si": "Sinh", "ta": "Taml"}
+# translate_v2 also localises foreign context (states, currency, SSN -> NIC); v1 kept for old records
+TRANSLATE_PROMPT = "translate_v2"
 
 Check = Callable[[Any, Any], tuple[Any, str | None]]   # (input item, model output) -> (value, error)
 
@@ -132,7 +134,7 @@ def make_check_translate(lang: str) -> Check:
 
 
 def translate(llm: LLM, texts: list[str], lang: str, batch_size: int = 4, workers: int = 4):
-    return _batched(llm, "translate_v1", texts, "translations", make_check_translate(lang),
+    return _batched(llm, TRANSLATE_PROMPT, texts, "translations", make_check_translate(lang),
                     vars={"language": LANG_NAMES[lang], "script": SCRIPT_NAMES[lang],
                           "suffix_example": SUFFIX_EXAMPLE[lang]},
                     batch_size=batch_size, workers=workers)
@@ -209,7 +211,7 @@ def dry_run_handler(req) -> str:
                                       "placeholders": {"PERSON_1": {"subtype": None},
                                                        "PHONE_1": {"subtype": "MOBILE"}}} for t in items]},
                           ensure_ascii=False)
-    if pid == "translate_v1":
+    if pid.startswith("translate_"):
         native = "පරිවර්තනය" if "Sinhala" in req.messages[0].content else "மொழிபெயர்ப்பு"
         return json.dumps({"translations": [f"{native}: {t}" for t in items]}, ensure_ascii=False)
     if pid == "codemix_v1":

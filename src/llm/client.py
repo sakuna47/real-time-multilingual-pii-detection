@@ -108,6 +108,7 @@ class LLM:
         self.calllog.write(role=self.role, model=self.name, prompt_id=req.prompt_id, cached=cached,
                            input_tokens=(resp.usage or {}).get("input_tokens") if resp else None,
                            output_tokens=(resp.usage or {}).get("output_tokens") if resp else None,
+                           thinking_tokens=(resp.usage or {}).get("thinking_tokens") if resp else None,
                            latency_s=resp.latency_s if resp and not cached else None,
                            finish_reason=resp.finish_reason if resp else None, error=error)
 

@@ -10,6 +10,15 @@ key_env = "GEMINI_API_KEY"
 rpm = 10                    # requests per minute; set to your tier's limit
 timeout_s = 120
 
+[providers.vertex]
+# Vertex AI on your Google Cloud project (billed to its credits). Auth: Application Default
+# Credentials (gcloud auth application-default login / Colab auth), or VERTEX_API_KEY (express mode).
+project_env = "GOOGLE_CLOUD_PROJECT"
+location = "global"          # overridden by GOOGLE_CLOUD_LOCATION
+key_env = "VERTEX_API_KEY"
+rpm = 60
+timeout_s = 180
+
 [providers.openrouter]
 key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
@@ -31,19 +40,22 @@ rpm = 0                     # 0 = no rate limit
 # The judge must use a different model from every generating role (checked on load).
 
 [roles.translator]
-model = "gemini:gemini-2.5-flash"
+model = "vertex:gemini-3.5-flash"
 temperature = 0.2
 max_tokens = 8192
+thinking_budget = 0         # Gemini: no hidden reasoning (billed as output); see FLORES check
 
 [roles.codemixer]
-model = "gemini:gemini-2.5-flash"
+model = "vertex:gemini-3.5-flash"
 temperature = 0.5
 max_tokens = 8192
+thinking_budget = 0         # Gemini: no hidden reasoning (billed as output); see FLORES check
 
 [roles.inserter]
-model = "gemini:gemini-2.5-flash"
+model = "vertex:gemini-3.5-flash"
 temperature = 0.3
 max_tokens = 8192
+thinking_budget = 0         # Gemini: no hidden reasoning (billed as output); see FLORES check
 
 [roles.judge]
 model = "deepseek:deepseek-flash"
@@ -52,9 +64,10 @@ max_tokens = 4096
 
 [roles.transliterator]
 # fills missing Sinhala/Tamil spellings in resources/sl (src/sl_gen/fill_scripts.py); output is human-reviewed
-model = "gemini:gemini-2.5-flash"
+model = "vertex:gemini-3.5-flash"
 temperature = 0.0
 max_tokens = 8192
+thinking_budget = 0         # Gemini: no hidden reasoning (billed as output); see FLORES check
 
 [roles.smoke]
 model = "gemini:gemini-2.5-flash"

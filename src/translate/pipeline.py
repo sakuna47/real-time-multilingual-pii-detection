@@ -178,7 +178,7 @@ def run(source: str, *, limit: int | None, langs: list[str], mix: dict[str, floa
                 t["fail"] = ("translate", err)
             else:
                 t["text"] = val
-                t["models"].append(llms["translator"].model_record("translate_v1"))
+                t["models"].append(llms["translator"].model_record(steps.TRANSLATE_PROMPT))
 
     # 3. code-mix / romanise
     for code in ("si-en", "ta-en", "si-rom", "ta-rom"):

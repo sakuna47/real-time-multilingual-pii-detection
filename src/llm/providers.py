@@ -10,13 +10,21 @@ from .config import ConfigError, LLMConfig
 from .mock import MockClient
 from .openai_compat import OPENROUTER_HEADERS, OpenAICompatClient
 
-PROVIDERS = ("gemini", "openrouter", "deepseek", "mock")
+PROVIDERS = ("gemini", "vertex", "openrouter", "deepseek", "mock")
 
 
 def build_provider(name: str, cfg: LLMConfig) -> ProviderClient:
     p: dict[str, Any] = cfg.provider(name)
     if name == "mock":
         return MockClient()
+    if name == "vertex":   # Google Cloud project credits; no API key needed with ADC
+        import os
+        from .gemini import GeminiClient
+        express_key = get_secret(p.get("key_env", "VERTEX_API_KEY"), required=False)
+        project = os.environ.get(p.get("project_env", "GOOGLE_CLOUD_PROJECT"), "").strip() or p.get("project")
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "").strip() or p.get("location", "global")
+        return GeminiClient(api_key=express_key, timeout_s=float(p.get("timeout_s", 120)), vertex=True,
+                            project=project, location=location)
     key = get_secret(p.get("key_env") or f"{name.upper()}_API_KEY")
     timeout = float(p.get("timeout_s", 120))
     if name == "gemini":

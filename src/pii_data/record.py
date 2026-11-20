@@ -15,7 +15,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 # label -> allowed subtypes (empty = subtype must be null)
 LABEL_SETS: dict[str, dict[str, set[str]]] = {

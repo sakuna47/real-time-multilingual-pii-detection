@@ -1,4 +1,11 @@
-"""Google Gemini adapter (google-genai SDK)."""
+"""Google Gemini adapter (google-genai SDK), for both the Gemini API and Vertex AI.
+
+provider "gemini"  Gemini API (AI Studio key, GEMINI_API_KEY)
+provider "vertex"  Vertex AI, billed to a Google Cloud project (uses its credits). Auth, in order:
+                   VERTEX_API_KEY (Vertex express-mode key) if set, otherwise Application Default
+                   Credentials: `gcloud auth application-default login` locally, or
+                   `google.colab.auth.authenticate_user()` in Colab.
+"""
 
 from __future__ import annotations
 
@@ -11,17 +18,29 @@ from .base import LLMError, LLMRequest, LLMResponse, is_retryable_status
 class GeminiClient:
     provider = "gemini"
 
-    def __init__(self, api_key: str, timeout_s: float = 120):
+    def __init__(self, api_key: str | None = None, timeout_s: float = 120, *, vertex: bool = False,
+                 project: str | None = None, location: str | None = None):
         try:
             from google import genai
             from google.genai import types
         except ImportError as e:
             raise ImportError("Gemini needs the google-genai package: pip install google-genai") from e
         self._types = types
-        # v1beta: system instructions and JSON mode are not enabled on v1 for every model
-        self._client = genai.Client(api_key=api_key,
-                                    http_options=types.HttpOptions(api_version="v1beta",
-                                                                   timeout=int(timeout_s * 1000)))
+        if vertex:
+            self.provider = "vertex"
+            opts = types.HttpOptions(timeout=int(timeout_s * 1000))
+            if api_key:   # express mode
+                self._client = genai.Client(vertexai=True, api_key=api_key, http_options=opts)
+            else:
+                if not project:
+                    raise ValueError("Vertex AI needs a project: set GOOGLE_CLOUD_PROJECT (see .env.example)")
+                self._client = genai.Client(vertexai=True, project=project, location=location or "global",
+                                            http_options=opts)
+        else:
+            # v1beta: system instructions and JSON mode are not enabled on v1 for every model
+            self._client = genai.Client(api_key=api_key,
+                                        http_options=types.HttpOptions(api_version="v1beta",
+                                                                       timeout=int(timeout_s * 1000)))
 
     def _contents(self, req: LLMRequest):
         t = self._types
@@ -50,7 +69,7 @@ class GeminiClient:
         try:
             resp = self._client.models.generate_content(model=model, contents=contents, config=config)
         except Exception as e:  # map SDK errors to LLMError
-            raise _to_llm_error(e) from e
+            raise _to_llm_error(e, self.provider) from e
         latency = time.monotonic() - start
 
         finish = None
@@ -77,16 +96,16 @@ class GeminiClient:
             for m in self._client.models.list():
                 actions = getattr(m, "supported_actions", None) or []
                 if not actions or "generateContent" in actions:
-                    names.append(m.name.removeprefix("models/"))
+                    names.append(m.name.rsplit("/", 1)[-1])   # "models/x" or "publishers/google/models/x"
             return sorted(names)
         except Exception as e:
-            raise _to_llm_error(e) from e
+            raise _to_llm_error(e, self.provider) from e
 
 
-def _to_llm_error(e: Exception) -> LLMError:
+def _to_llm_error(e: Exception, provider: str = "gemini") -> LLMError:
     status = getattr(e, "code", None) or getattr(e, "status_code", None)
     if not isinstance(status, int):
         status = None
     # timeouts / connection problems have no status and are retryable
-    return LLMError(f"Gemini error ({status}): {e}", status=status,
-                    retryable=is_retryable_status(status), provider="gemini")
+    return LLMError(f"{provider} error ({status}): {e}", status=status,
+                    retryable=is_retryable_status(status), provider=provider)

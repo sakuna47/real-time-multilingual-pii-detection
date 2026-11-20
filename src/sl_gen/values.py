@@ -74,14 +74,19 @@ def dob_value(p: Persona, v: Variety, rng: random.Random, col: str | None = None
     return rng.choice(options)
 
 
-def address_value(p: Persona, v: Variety, rng: random.Random, col: str | None = None) -> tuple[str, str]:
+def address_value(p: Persona, v: Variety, rng: random.Random, col: str | None = None,
+                  include_city: bool = True) -> tuple[str, str]:
+    """include_city=False when the text names the city separately (a LOCATION placeholder)."""
     col = col or _script_col(v, rng)
     no = _word("no", col)
     street = f"{p.street[col]} {_word(p.street_word, col)}"
-    city = p.place[col]
-    with_pc = rng.random() < 0.3
-    text = f"{no} {p.house}, {street}, {city}" + (f" {p.place['postcode']}" if with_pc else "")
-    return text, f"address:{col}" + ("_postcode" if with_pc else "")
+    text = f"{no} {p.house}, {street}"
+    with_pc = bool(p.place.get("postcode")) and rng.random() < 0.3
+    if include_city:
+        text += f", {p.place[col]}" + (f" {p.place['postcode']}" if with_pc else "")
+    else:
+        with_pc = False
+    return text, f"address:{col}" + ("_postcode" if with_pc else "") + ("" if include_city else "_nocity")
 
 
 def script_for(v: Variety, rng: random.Random) -> str:
@@ -90,7 +95,7 @@ def script_for(v: Variety, rng: random.Random) -> str:
 
 
 def render(label: str, subtype: str | None, p: Persona, v: Variety, rng: random.Random,
-           part: str = "full", col: str | None = None) -> tuple[str, str]:
+           part: str = "full", col: str | None = None, include_city: bool = True) -> tuple[str, str]:
     """Text for a placeholder of this label. ID_NUMBER defaults to a NIC.
     `col` fixes the script (latin / sinhala / tamil) for names, places, addresses and dates."""
     if label == "PERSON":
@@ -108,7 +113,7 @@ def render(label: str, subtype: str | None, p: Persona, v: Variety, rng: random.
     if label == "EMAIL":
         return p.email, "email"
     if label == "ADDRESS":
-        return address_value(p, v, rng, col)
+        return address_value(p, v, rng, col, include_city)
     if label == "LOCATION":
         col = col or _script_col(v, rng)
         return p.place[col], f"location:{col}"

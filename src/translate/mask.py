@@ -58,9 +58,32 @@ def _person_links(values: list[str]) -> dict[str, tuple[str, str]]:
     return out
 
 
+FIRST_LABELS = {"first_name", "GIVENNAME1", "GIVENNAME2"}
+LAST_LABELS = {"last_name", "LASTNAME1", "LASTNAME2", "LASTNAME3"}
+
+
+def _field_links(spans: list[dict]) -> dict[str, tuple[str, str]]:
+    """Separate first-name and last-name fields (forms) -> one entity with parts first/last.
+    A last name joins the most recent first name that has no last name yet."""
+    out: dict[str, tuple[str, str]] = {}
+    open_key = None
+    for i, s in enumerate(spans):
+        if s["label"] != "PERSON" or s["value"] in out:
+            continue
+        src = set(s.get("source_labels") or [])
+        if src and src <= FIRST_LABELS:
+            open_key = f"field{i}"
+            out[s["value"]] = (open_key, "first")
+        elif src and src <= LAST_LABELS:
+            out[s["value"]] = (open_key or f"field{i}", "last")
+            open_key = None
+    return out
+
+
 def mask(record: dict) -> Masked:
     text, spans = record["text"], sorted(record["spans"], key=lambda s: s["start"])
     links = _person_links([s["value"] for s in spans if s["label"] == "PERSON"])
+    links.update(_field_links(spans))   # source labels say first/last: trust them over token matching
     entity_ids: dict[str, str] = {}
     slot_for_value: dict[tuple[str, str], str] = {}
     counters: dict[str, int] = {}

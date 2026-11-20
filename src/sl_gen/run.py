@@ -1,6 +1,7 @@
 """Sri Lankan value resources and personas.
 
     python -m src.sl_gen.run resources [--cached-json DIR] [--no-wikidata]
+    python -m src.sl_gen.run places [--cached-json DIR]          # add all Wikidata towns/villages
     python -m src.sl_gen.run fill-scripts [--limit N] [--dry-run]   # LLM fills missing si/ta forms
     python -m src.sl_gen.run coverage
     python -m src.sl_gen.run personas --n 5 [--variety si]
@@ -17,7 +18,7 @@ from pathlib import Path
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["resources", "fill-scripts", "coverage", "personas"])
+    ap.add_argument("cmd", choices=["resources", "places", "fill-scripts", "coverage", "personas"])
     ap.add_argument("--cached-json", type=Path, default=None)
     ap.add_argument("--no-wikidata", action="store_true")
     ap.add_argument("--limit", type=int, default=None)
@@ -31,6 +32,12 @@ def main(argv: list[str] | None = None) -> int:
         from .resources import build, coverage
         print(build(wikidata=not args.no_wikidata, cached_json=args.cached_json))
         print(json.dumps(coverage(), indent=2))
+    elif args.cmd == "places":
+        from .resources import SPARQL_SETTLEMENTS, build_places, coverage, sparql
+        cached = args.cached_json / "wd_settlements.json" if args.cached_json else None
+        rows = json.loads(cached.read_text(encoding="utf-8")) if cached and cached.exists() else sparql(SPARQL_SETTLEMENTS)
+        print("places:", build_places(rows))
+        print(json.dumps(coverage()["places"], indent=2))
     elif args.cmd == "fill-scripts":
         from .fill_scripts import fill_all
         fill_all(limit=args.limit, dry_run=args.dry_run)

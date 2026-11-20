@@ -112,6 +112,33 @@ def test_render_all_labels():
     assert nic.consistent(nic_text, p.dob, p.female)
 
 
+def test_settlements_merge_keeps_best_row():
+    W = "http://www.wikidata.org/entity/"
+    rows = [
+        {"p": W + "Q1", "en": "Kandy", "si": "මහනුවර", "cls": W + "Q515", "distLabel": "Kandy District"},
+        {"p": W + "Q2", "en": "Galewela", "ta": "கலேவளை", "cls": W + "Q3957", "distLabel": "Matale District"},
+        {"p": W + "Q3", "en": "Anuradhapura", "si": "අනුරාධපුර පෞරාණික නගරය පුරාණ", "cls": W + "Q515"},  # description, not a name
+        {"p": W + "Q4", "en": "Village 12", "cls": W + "Q532"},                                       # digits: skipped
+    ]
+    new = resources.places_from_wikidata(rows, require_postcode=False)
+    assert [r["latin"] for r in new] == ["Anuradhapura", "Galewela", "Kandy"]
+    assert next(r for r in new if r["latin"] == "Anuradhapura")["sinhala"] == ""
+    assert next(r for r in new if r["latin"] == "Galewela")["district"] == "Matale"
+    old = [{"latin": "Kandy", "sinhala": "මහනුවර", "tamil": "கண்டி", "postcode": "20000", "source": "wikidata"}]
+    merged = resources.merge_places(old, new)
+    kandy = next(r for r in merged if r["latin"] == "Kandy")
+    assert kandy["postcode"] == "20000" and kandy["tamil"] == "கண்டி" and kandy["kind"] == "city"
+    assert len(merged) == 3
+
+
+def test_address_without_postcode():
+    p = PersonaFactory(seed=3).make(0)
+    p.place["postcode"] = ""
+    for k in range(30):
+        text, fmt = values.render("ADDRESS", None, p, varieties.get("si-rom"), random.Random(k))
+        assert "postcode" not in fmt and not text.rstrip().endswith(" ")
+
+
 def test_wikidata_rows_to_names():
     rows = [
         {"n": "http://www.wikidata.org/entity/Q1", "en": "Kasun", "si": "කසුන්", "ta": "கசுன்",

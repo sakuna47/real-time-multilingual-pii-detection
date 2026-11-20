@@ -141,20 +141,86 @@ def names_from_wikidata(rows: list[dict], with_gender: bool) -> list[dict]:
     return out
 
 
-def places_from_wikidata(rows: list[dict]) -> list[dict]:
+SPARQL_SETTLEMENTS = """SELECT ?p ?en ?si ?ta ?pc ?distLabel ?cls WHERE {
+  VALUES ?cls { wd:Q486972 wd:Q3957 wd:Q532 wd:Q515 wd:Q1549591 wd:Q188509 wd:Q5084 wd:Q15284 }
+  ?p wdt:P17 wd:Q854; wdt:P31 ?cls.
+  OPTIONAL { ?p rdfs:label ?en FILTER(LANG(?en)="en") }
+  OPTIONAL { ?p rdfs:label ?si FILTER(LANG(?si)="si") }
+  OPTIONAL { ?p rdfs:label ?ta FILTER(LANG(?ta)="ta") }
+  OPTIONAL { ?p wdt:P281 ?pc }
+  OPTIONAL { ?p wdt:P131 ?dist. ?dist rdfs:label ?distLabel FILTER(LANG(?distLabel)="en") }
+}"""
+KIND = {"Q486972": "settlement", "Q3957": "town", "Q532": "village", "Q515": "city", "Q1549591": "city",
+        "Q188509": "suburb", "Q5084": "hamlet", "Q15284": "municipality"}
+PLACE_FIELDS = ["latin", "sinhala", "tamil", "postcode", "district", "kind", "source", "source_ref", "needs_review"]
+_PLACE_LATIN = re.compile(r"[A-Za-z][A-Za-z .'\-]{1,40}")
+
+
+def _place_label(label: str, latin: str, script: re.Pattern) -> str:
+    """Drop native labels that describe more than the name (e.g. 'Anuradhapura ancient city')."""
+    label = _clean(label, script)
+    if label and latin and len(label.split()) > len(latin.split()) + 1:
+        return ""
+    return label
+
+
+def places_from_wikidata(rows: list[dict], require_postcode: bool = True) -> list[dict]:
+    """Rows from SPARQL_PLACES (postcode required) or SPARQL_SETTLEMENTS (postcode optional)."""
     agg: dict[str, dict] = {}
     for r in rows:
         q = _qid(r["p"])
         pc = re.sub(r"\D", "", r.get("pc", ""))
-        if len(pc) != 5:
+        pc = pc if len(pc) == 5 else ""
+        if require_postcode and not pc:
             continue
-        a = agg.setdefault(q, {"latin": _clean(r.get("en")), "sinhala": _clean(r.get("si"), _SINH),
-                               "tamil": _clean(r.get("ta"), _TAML), "postcode": pc,
-                               "source": "wikidata", "source_ref": f"wikidata:{q}"})
+        latin = _clean(r.get("en"))
+        a = agg.setdefault(q, {"latin": latin, "sinhala": "", "tamil": "", "postcode": "", "district": "",
+                               "kind": "", "source": "wikidata", "source_ref": f"wikidata:{q}"})
+        a["sinhala"] = a["sinhala"] or _place_label(r.get("si"), latin, _SINH)
+        a["tamil"] = a["tamil"] or _place_label(r.get("ta"), latin, _TAML)
+        a["postcode"] = a["postcode"] or pc
+        dist = (r.get("distLabel") or "").replace(" District", "").strip()
+        a["district"] = a["district"] or (dist if dist != latin else "")
+        a["kind"] = a["kind"] or KIND.get(_qid(r.get("cls", "")), "")
+    out = []
+    for a in agg.values():
+        if not a["latin"] or not _PLACE_LATIN.fullmatch(a["latin"]):
+            continue
         a["needs_review"] = "no" if a["sinhala"] and a["tamil"] else "yes"
-    out = [a for a in agg.values() if a["latin"] and re.fullmatch(r"[A-Za-z][A-Za-z .'\-]{1,40}", a["latin"])]
+        out.append(a)
     out.sort(key=lambda r: r["latin"])
     return out
+
+
+def merge_places(*lists: list[dict]) -> list[dict]:
+    """One row per place name; keep the row with the most information (postcode, spellings)."""
+    best: dict[str, dict] = {}
+    score = lambda r: (bool(r.get("postcode")), bool(r.get("sinhala")) + bool(r.get("tamil")), bool(r.get("district")))
+    for rows in lists:
+        for r in rows:
+            key = r["latin"].casefold()
+            if key not in best or score(r) > score(best[key]):
+                merged = dict(best.get(key, {}))
+                merged.update({k: v for k, v in r.items() if v})
+                best[key] = merged
+            else:
+                for k, v in r.items():
+                    best[key].setdefault(k, v)
+                    if not best[key].get(k) and v:
+                        best[key][k] = v
+    out = sorted(best.values(), key=lambda r: r["latin"])
+    for r in out:
+        r["needs_review"] = "no" if r.get("sinhala") and r.get("tamil") and "+llm" not in r.get("source", "") else "yes"
+    return out
+
+
+def build_places(settlements_rows: list[dict]) -> int:
+    """Add Wikidata settlements to the existing places.csv (keeps reviewed/filled rows)."""
+    existing = [dict(r) for r in load("places")] if (res_dir() / "places.csv").exists() else []
+    merged = merge_places(existing, places_from_wikidata(settlements_rows, require_postcode=False))
+    fields = PLACE_FIELDS + [f for f in (existing[0].keys() if existing else []) if f not in PLACE_FIELDS]
+    write_csv("places", merged, fields)
+    return len(merged)
 
 
 # ---------------------------------------------------------------- curated tables
@@ -211,7 +277,7 @@ def build(wikidata: bool = True, cached_json: Path | None = None) -> dict[str, i
         cols = ["latin", "sinhala", "tamil", "people", "source", "source_ref", "needs_review"]
         write_csv("first_names", given, cols[:3] + ["gender"] + cols[3:])
         write_csv("surnames", family, cols)
-        write_csv("places", places, ["latin", "sinhala", "tamil", "postcode", "source", "source_ref", "needs_review"])
+        write_csv("places", places, PLACE_FIELDS)
         counts.update(first_names=len(given), surnames=len(family), places=len(places))
     write_csv("phone_codes", phone_rows(), ["code", "type", "area", "source", "source_ref", "needs_review"])
     cur = {"source": "curated", "source_ref": "project glossary", "needs_review": "yes"}

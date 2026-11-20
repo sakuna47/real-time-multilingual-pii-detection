@@ -262,8 +262,43 @@ data/<stage>/<dataset>/manifest.json
 }
 ```
 
-## 12. Changelog
+## 12. Conventions added in 1.1
+
+No field was renamed or removed, so 1.0 readers still work.
+
+**`ext.variety`**: the language variety of a generated Sri Lankan record. It is one of `si`, `ta`, `si-en`, `ta-en`, `si-rom` (Singlish), `ta-rom` (Tanglish). It is set by the translation engine and by the hard-negatives generator, and the checks use it to verify scripts.
+
+**Other `ext` keys written by the pipelines**
+
+| Key | Written by | Meaning |
+|---|---|---|
+| `value_formats` | translation engine | surface form of each filled value, e.g. `phone:intl_spaced`, `dob:long_sinhala` |
+| `persona_ids` | translation engine | fake personas behind the values |
+| `masked_target` | translation engine | the translated text with placeholders, before filling (for review) |
+| `unmapped_labels` | Nemotron importer | source PII types that v1 has no label for |
+| `distractor_kind` | negatives | which distractor clause was added |
+
+**Tags**
+
+| Tag | Meaning |
+|---|---|
+| `hard_negative` | no PII spans; has PII-looking distractors |
+| `nic_dob_consistent` | the NIC in the text encodes the date of birth and sex used in the same record |
+| `placeholder_inserted` | an LLM added placeholders to a real prompt that had none (WildChat, Aya) |
+| `needs_placeholders` | imported real prompt with no spans yet (input to placeholder insertion) |
+| `has_unmapped_pii` | contains PII types v1 cannot label; excluded from translation |
+| `upstream_redacted` | WildChat flagged the conversation as PII-redacted |
+| `loc_generic` | multiNER LOCATION spans mark any place, not only places tied to a person |
+| `auto_lang` | language block set from scripts detected in the text |
+| `fused_suffix` | a Sinhala/Tamil case ending could not be split from the name (§3) |
+
+**Distractor kind used by the negatives generator:** a tracking number shaped like a phone number is stored as `reference_number`.
+
+**Validation checks** (`src/validate/checks.py`) are written to `validation.checks` under these names: `schema`, `no_placeholders`, `variety_scripts`, `nic_format`, `nic_dob`, `phone_format`, `email_format`, `cmi` / `cmi_value`, `duplicate_text`.
+
+## 13. Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-11-20 | First version |
+| 1.1 | 2026-11-20 | Documented `ext.variety`, pipeline `ext` keys, tags and check names (§12). Additive only |

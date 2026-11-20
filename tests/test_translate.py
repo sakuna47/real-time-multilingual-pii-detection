@@ -104,6 +104,45 @@ def test_fill_nic_matches_dob():
         assert nic.decode(nic_text)
 
 
+def test_form_first_and_last_name_fields_are_one_person():
+    text = "First name: Jason\nLast name: Lee\nCity: Austin"
+    rec = {"text": text, "spans": [
+        {"start": 12, "end": 17, "label": "PERSON", "value": "Jason", "source_labels": ["first_name"]},
+        {"start": 29, "end": 32, "label": "PERSON", "value": "Lee", "source_labels": ["last_name"]},
+        {"start": 39, "end": 45, "label": "LOCATION", "value": "Austin", "source_labels": ["city"]}]}
+    m = mask(rec)
+    a, b = m.slots["{PERSON_1}"], m.slots["{PERSON_2}"]
+    assert a.entity == b.entity and (a.part, b.part) == ("first", "last")
+    slots = {k: s.to_dict() for k, s in m.slots.items()}
+    filled, err = fill("නම: {PERSON_1}\nවාසගම: {PERSON_2}\nනගරය: {LOCATION_1}", slots,
+                       varieties.get("si"), FACTORY, seed_key="form")
+    assert err is None
+    first, last = [s["value"] for s in filled["spans"] if s["label"] == "PERSON"]
+    assert " " not in first and " " not in last and len(filled["persona_ids"]) == 1
+
+
+def test_address_omits_city_when_location_present():
+    slots = {"{ADDRESS_1}": {"label": "ADDRESS", "subtype": None, "entity": "primary"},
+             "{LOCATION_1}": {"label": "LOCATION", "subtype": None, "entity": "primary"}}
+    for k in range(10):
+        filled, err = fill("Address {ADDRESS_1}, {LOCATION_1}", slots, varieties.get("si-rom"),
+                           FACTORY, seed_key=f"addr:{k}")
+        addr, city = [s["value"] for s in filled["spans"]]
+        assert city not in addr and "_nocity" in filled["formats"][0]
+
+
+def test_ssn_slot_becomes_nic_subtype():
+    slots = {"{ID_NUMBER_1}": {"label": "ID_NUMBER", "subtype": "SOCIAL_SECURITY", "entity": "primary"},
+             "{ID_NUMBER_2}": {"label": "ID_NUMBER", "subtype": "PASSPORT", "entity": "primary"}}
+    for k in range(20):
+        filled, err = fill("NIC {ID_NUMBER_1}, passport {ID_NUMBER_2}", slots, varieties.get("si-rom"),
+                           FACTORY, seed_key=f"ssn:{k}")
+        assert err is None
+        nic_span, pp_span = filled["spans"]
+        assert nic_span["subtype"] in ("NIC_OLD", "NIC_NEW") and nic.decode(nic_span["value"])
+        assert pp_span["subtype"] == "PASSPORT"
+
+
 def test_fill_rejects_unknown_or_stray_tokens():
     assert fill("{PERSON_1} {EMAIL_1}", {"{PERSON_1}": {"label": "PERSON", "subtype": None, "entity": "p1"}},
                 varieties.get("si"), FACTORY, seed_key="x")[1].startswith("fill: unknown")

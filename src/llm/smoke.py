@@ -17,7 +17,7 @@ from .config import load_config, split_spec
 from .prompts import load_prompt
 from .providers import build_provider
 
-LIVE = ("gemini", "openrouter", "deepseek")
+LIVE = ("gemini", "vertex", "openrouter", "deepseek")
 
 
 def _default_specs(cfg) -> list[str]:
@@ -29,8 +29,14 @@ def _default_specs(cfg) -> list[str]:
             specs[provider] = role.model
     out = []
     for provider in LIVE:
-        key_env = cfg.provider(provider).get("key_env", f"{provider.upper()}_API_KEY")
-        if not has_secret(key_env):
+        pc = cfg.provider(provider)
+        key_env = pc.get("key_env", f"{provider.upper()}_API_KEY")
+        if provider == "vertex":
+            import os
+            if not (has_secret(key_env) or os.environ.get(pc.get("project_env", "GOOGLE_CLOUD_PROJECT"))):
+                print("skip vertex: set GOOGLE_CLOUD_PROJECT (with gcloud login) or VERTEX_API_KEY")
+                continue
+        elif not has_secret(key_env):
             print(f"skip {provider}: {key_env} not set")
             continue
         if provider in specs:

@@ -36,7 +36,8 @@ def setup_env(local_cache: str | Path = LOCAL_CACHE, hf_home: str = "/content/hf
     Path(os.environ["PII_CACHE_DIR"]).mkdir(parents=True, exist_ok=True)
 
 
-SECRET_NAMES = ("GEMINI_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "HF_TOKEN")
+SECRET_NAMES = ("GEMINI_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "HF_TOKEN",
+                "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "VERTEX_API_KEY")
 
 
 def load_secrets(names: tuple[str, ...] = SECRET_NAMES) -> dict[str, bool]:
@@ -53,6 +54,15 @@ def load_secrets(names: tuple[str, ...] = SECRET_NAMES) -> dict[str, bool]:
             os.environ[name] = value
         found[name] = bool(value)
     return found
+
+
+def vertex_login() -> None:
+    """Log this Colab session in to Google Cloud so Vertex AI uses your project's credits.
+    Needs GOOGLE_CLOUD_PROJECT (Colab Secret). Not needed when VERTEX_API_KEY is set."""
+    if os.environ.get("VERTEX_API_KEY"):
+        return
+    from google.colab import auth  # type: ignore
+    auth.authenticate_user(project_id=os.environ.get("GOOGLE_CLOUD_PROJECT") or None)
 
 
 def _backup(src: Path, dst: Path) -> None:
