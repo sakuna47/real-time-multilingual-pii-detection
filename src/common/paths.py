@@ -31,12 +31,28 @@ def path(*parts: str, mkdir: bool = False) -> Path:
 
 
 def cache_dir() -> Path:
-    d = data_root() / "cache"
+    """API response cache. PII_CACHE_DIR overrides it; in Colab point it at local disk
+    (/content/cache) because SQLite on mounted Drive is slow and can lock, then copy it
+    to Drive with src.common.colab."""
+    env = os.environ.get("PII_CACHE_DIR", "").strip()
+    d = Path(env) if env else data_root() / "cache"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def logs_dir() -> Path:
     d = data_root() / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def results_dir(*parts: str) -> Path:
+    d = data_root().joinpath("results", *parts)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def sources_dir(*parts: str) -> Path:
+    d = data_root().joinpath("sources", *parts)
     d.mkdir(parents=True, exist_ok=True)
     return d
