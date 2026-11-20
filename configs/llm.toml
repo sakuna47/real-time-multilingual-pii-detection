@@ -52,7 +52,7 @@ max_tokens = 4096
 
 [roles.transliterator]
 # fills missing Sinhala/Tamil spellings in resources/sl (src/sl_gen/fill_scripts.py); output is human-reviewed
-model = "deepseek:deepseek-flash"
+model = "gemini:gemini-2.5-flash"
 temperature = 0.0
 max_tokens = 8192
 

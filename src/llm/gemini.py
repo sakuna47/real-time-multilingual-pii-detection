@@ -18,8 +18,10 @@ class GeminiClient:
         except ImportError as e:
             raise ImportError("Gemini needs the google-genai package: pip install google-genai") from e
         self._types = types
+        # v1beta: system instructions and JSON mode are not enabled on v1 for every model
         self._client = genai.Client(api_key=api_key,
-                                    http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+                                    http_options=types.HttpOptions(api_version="v1beta",
+                                                                   timeout=int(timeout_s * 1000)))
 
     def _contents(self, req: LLMRequest):
         t = self._types

@@ -33,10 +33,13 @@ def fill_file(name: str, llm, limit: int | None = None) -> dict:
         [{"latin": rows[i]["latin"], "sinhala": rows[i].get("sinhala", ""), "tamil": rows[i].get("tamil", "")}
          for i in c], ensure_ascii=False)) for c in chunks]
     filled = rejected = 0
+    errors: dict[str, int] = {}
     for chunk, res in zip(chunks, run_batch(llm, reqs, workers=4, json=True, progress_every=0)):
         items = res.data.get("items") if res.ok and isinstance(res.data, dict) else None
         if not isinstance(items, list) or len(items) != len(chunk):
             rejected += len(chunk)
+            why = f"{type(res.error).__name__}: {res.error}"[:160] if res.error else "bad reply shape"
+            errors[why] = errors.get(why, 0) + 1
             continue
         for i, item in zip(chunk, items):
             r = rows[i]
@@ -56,8 +59,9 @@ def fill_file(name: str, llm, limit: int | None = None) -> dict:
                 if item.get("unsure"):
                     r["llm_filled"] += ",unsure"
                 filled += 1
-    write_csv(name, rows, fields)
-    return {"rows_needing_fill": len(todo), "filled": filled, "rejected": rejected}
+    if filled:
+        write_csv(name, rows, fields)
+    return {"rows_needing_fill": len(todo), "filled": filled, "rejected": rejected, "errors": errors}
 
 
 def fill_all(limit: int | None = None, dry_run: bool = False) -> None:

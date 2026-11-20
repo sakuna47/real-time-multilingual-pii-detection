@@ -33,8 +33,9 @@ def _month(m: int, col: str, directory: str | None = None) -> str:
     return load("months", directory)[m - 1][col]
 
 
-def name(p: Persona, v: Variety, rng: random.Random, part: str = "full") -> tuple[str, str]:
-    col = _script_col(v, rng)
+def name(p: Persona, v: Variety, rng: random.Random, part: str = "full", col: str | None = None
+         ) -> tuple[str, str]:
+    col = col or _script_col(v, rng)
     first, last = p.first[col], p.last[col]
     if part == "first":
         return first, f"name:{col}_first"
@@ -58,9 +59,9 @@ def nic_value(p: Persona, rng: random.Random, subtype: str | None) -> tuple[str,
     return s, "nic:new"
 
 
-def dob_value(p: Persona, v: Variety, rng: random.Random) -> tuple[str, str]:
+def dob_value(p: Persona, v: Variety, rng: random.Random, col: str | None = None) -> tuple[str, str]:
     d = p.dob
-    col = _script_col(v, rng) if not v.romanized else "latin"
+    col = "latin" if v.romanized else (col or _script_col(v, rng))
     options = [
         (d.isoformat(), "dob:iso"),
         (f"{d.day:02d}/{d.month:02d}/{d.year}", "dob:dmy_slash"),
@@ -73,8 +74,8 @@ def dob_value(p: Persona, v: Variety, rng: random.Random) -> tuple[str, str]:
     return rng.choice(options)
 
 
-def address_value(p: Persona, v: Variety, rng: random.Random) -> tuple[str, str]:
-    col = _script_col(v, rng)
+def address_value(p: Persona, v: Variety, rng: random.Random, col: str | None = None) -> tuple[str, str]:
+    col = col or _script_col(v, rng)
     no = _word("no", col)
     street = f"{p.street[col]} {_word(p.street_word, col)}"
     city = p.place[col]
@@ -83,11 +84,17 @@ def address_value(p: Persona, v: Variety, rng: random.Random) -> tuple[str, str]
     return text, f"address:{col}" + ("_postcode" if with_pc else "")
 
 
+def script_for(v: Variety, rng: random.Random) -> str:
+    """Pick the script column once per person, so one record writes a person consistently."""
+    return _script_col(v, rng)
+
+
 def render(label: str, subtype: str | None, p: Persona, v: Variety, rng: random.Random,
-           part: str = "full") -> tuple[str, str]:
-    """Text for a placeholder of this label. ID_NUMBER defaults to a NIC."""
+           part: str = "full", col: str | None = None) -> tuple[str, str]:
+    """Text for a placeholder of this label. ID_NUMBER defaults to a NIC.
+    `col` fixes the script (latin / sinhala / tamil) for names, places, addresses and dates."""
     if label == "PERSON":
-        return name(p, v, rng, part)
+        return name(p, v, rng, part, col)
     if label == "ID_NUMBER":
         if subtype == "PASSPORT":
             return f"N{rng.randint(0, 9999999):07d}", "id:passport"
@@ -101,12 +108,12 @@ def render(label: str, subtype: str | None, p: Persona, v: Variety, rng: random.
     if label == "EMAIL":
         return p.email, "email"
     if label == "ADDRESS":
-        return address_value(p, v, rng)
+        return address_value(p, v, rng, col)
     if label == "LOCATION":
-        col = _script_col(v, rng)
+        col = col or _script_col(v, rng)
         return p.place[col], f"location:{col}"
     if label == "DOB":
-        return dob_value(p, v, rng)
+        return dob_value(p, v, rng, col)
     if label == "USERNAME":
         return p.username, "username"
     if label == "PASSWORD":
